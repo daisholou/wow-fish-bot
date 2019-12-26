@@ -14,6 +14,7 @@ from PIL import ImageGrab
 from win32gui import GetWindowText, GetForegroundWindow, GetWindowRect
 from threading import Thread
 from infi.systray import SysTrayIcon
+import dlib
 
 
 def resource_path(relative_path):
@@ -63,10 +64,11 @@ if __name__ == "__main__":
     toaster.show_toast(app,
                        link,
                        icon_path=app_ico,
-                       duration=5)    
+                       duration=5)
+    detector = dlib.simple_object_detector("detector.svm")
     while flag_exit is False:
         if is_stop == False:
-            if GetWindowText(GetForegroundWindow()) != "World of Warcraft":
+            if GetWindowText(GetForegroundWindow()) != "魔兽世界":
                 if wait_mes == 5:
                     wait_mes = 0
                     toaster.show_toast(app,
@@ -93,30 +95,20 @@ if __name__ == "__main__":
                     is_block = True
                     time.sleep(2)
                 else:
-                    fish_area = (0, rect[3] / 2, rect[2], rect[3])
+                    fish_area = (rect[0], rect[3] / 2, rect[2], rect[3])
     
                     img = ImageGrab.grab(fish_area)
                     img_np = np.array(img)
-    
-                    frame = cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB)
-                    frame_hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    
-                    h_min = np.array((0, 0, 253), np.uint8)
-                    h_max = np.array((255, 0, 255), np.uint8)
-    
-                    mask = cv2.inRange(frame_hsv, h_min, h_max)
-    
-                    moments = cv2.moments(mask, 1)
-                    dM01 = moments['m01']
-                    dM10 = moments['m10']
-                    dArea = moments['m00']
-    
-                    b_x = 0
-                    b_y = 0
-    
-                    if dArea > 0:
-                        b_x = int(dM10 / dArea)
-                        b_y = int(dM01 / dArea)
+
+                    dets = detector(img, 1)
+                    print("Number of faces detected: {}".format(len(dets)))
+                    for i, d in enumerate(dets):
+                        print("Detection {}: Left: {} Top: {} Right: {} Bottom: {}".format(
+                            i, d.left(), d.top(), d.right(), d.bottom()))
+
+                        b_x = int((d.left() + d.right()) / 2)
+                        b_y = int((d.top() + d.bottom()) / 2)
+
                     if lastx > 0 and lasty > 0:
                         if lastx != b_x and lasty != b_y:
                             is_block = False

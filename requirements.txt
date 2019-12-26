@@ -11,3 +11,5 @@ PyScreeze==0.1.21
 PyTweening==1.0.3
 pywin32==224
 win10toast==0.9
+cmake
+dlib
