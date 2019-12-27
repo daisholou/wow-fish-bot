@@ -23,7 +23,8 @@ def resource_path(relative_path):
     else:
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
-  
+
+
 def app_pause(systray):
     global is_stop
     is_stop = False if is_stop is True else True
@@ -35,13 +36,16 @@ def app_pause(systray):
         systray.update(
             hover_text=app)         
 
+
 def app_destroy(systray):
     # print("Exit app")
     sys.exit()
-    
+
+
 def app_about(systray):
     # print("github.com/YECHEZ/wow-fish-bot")
     webbrowser.open('https://github.com/YECHEZ/wow-fish-bot')
+
 
 if __name__ == "__main__":
     is_stop = True
@@ -86,7 +90,7 @@ if __name__ == "__main__":
                 systray.update(hover_text=app)
                 rect = GetWindowRect(GetForegroundWindow())
                 
-                if is_block == False:
+                if not is_block:
                     lastx = 0
                     lasty = 0
                     pyautogui.press('1')
@@ -95,12 +99,12 @@ if __name__ == "__main__":
                     is_block = True
                     time.sleep(2)
                 else:
-                    fish_area = (rect[0], rect[3] / 2, rect[2], rect[3])
+                    fish_area = (0, rect[3] / 2, rect[2], rect[3])
     
                     img = ImageGrab.grab(fish_area)
                     img_np = np.array(img)
 
-                    dets = detector(img, 1)
+                    dets = detector(img_np, 1)
                     print("Number of faces detected: {}".format(len(dets)))
                     for i, d in enumerate(dets):
                         print("Detection {}: Left: {} Top: {} Right: {} Bottom: {}".format(
@@ -108,21 +112,13 @@ if __name__ == "__main__":
 
                         b_x = int((d.left() + d.right()) / 2)
                         b_y = int((d.top() + d.bottom()) / 2)
-
-                    if lastx > 0 and lasty > 0:
-                        if lastx != b_x and lasty != b_y:
-                            is_block = False
-                            if b_x < 1: b_x = lastx
-                            if b_y < 1: b_y = lasty
-                            pyautogui.moveTo(b_x, b_y + fish_area[1], 0.3)
-                            pyautogui.keyDown('shiftleft')
-                            pyautogui.mouseDown(button='right')
-                            pyautogui.mouseUp(button='right')
-                            pyautogui.keyUp('shiftleft')
-                            # print("Catch !")
-                            time.sleep(5)
-                    lastx = b_x
-                    lasty = b_y
+                        pyautogui.moveTo(b_x, b_y + fish_area[1], 0.3)
+                        pyautogui.keyDown('shiftleft')
+                        pyautogui.mouseDown(button='right')
+                        pyautogui.mouseUp(button='right')
+                        pyautogui.keyUp('shiftleft')
+                        # print("Catch !")
+                        time.sleep(5)
                     
                     # show windows with mask
                     # cv2.imshow("fish_mask", mask)
