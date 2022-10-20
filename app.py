@@ -121,7 +121,7 @@ class APP:
                 self.online_name.append(self.wows[hwnd].name)
                 self.online_wnd_list.insert('end', self.online_name[-1])
                 self.write_log_to_Text(self.online_name[-1] + ' start auto fishing')
-                win32gui.ShowWindow(hwnd, win32con.SW_NORMAL)
+                win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
                 self.wows[hwnd].working = True
                 self.wows[hwnd].run()
                 # self.get_screen(hwnd)
@@ -199,8 +199,8 @@ class APP:
             for e in wnd:
                 hwnd = self.free_hwnd[e]
                 print(hwnd)
-                win32gui.ShowWindow(hwnd, win32con.SW_NORMAL)
-                time.sleep(1)
+                win32gui.ShowWindow(hwnd, win32con.SW_SHOWNORMAL)
+                time.sleep(0.5)
 
     def get_window_status(self, hwnd):
         status = '未知'
@@ -250,20 +250,19 @@ class WOW:
         self.gap = 0.5  # 每0.5秒检测一次
 
     def run(self):
-        self.left, self.top, self.right, self.bot = win32gui.GetWindowRect(self.hwnd)
-        self.width = self.right - self.left
-        self.height = self.bot - self.top
-        print(self.left, self.top, self.right, self.bot, self.width, self.height)
+
         t = Thread(target=self.fishing)
         t.start()
-        t.join()
 
     def fishing(self):
         bait_time = 0
+        last_x = 0
+        last_y = 0
         while self.working:
             app.write_log_to_Text(self.name + ' start fishing')
             is_bait = False
-            x, y = self.find_float
+            x, y = self.get_float()
+            print(x, y)
             if x + y > 0:
                 if last_y != y and abs(last_x - x) < 1 and abs(last_y - y) < 3:
                     pyautogui.moveTo(x+self.left, y+self.top, 0.3)  # 收杆
@@ -294,7 +293,7 @@ class WOW:
             print("none posion find")
             return None
 
-    def find_float(self, hwnd):
+    def find_float(self):
 
         # img = self.get_screen()
         # img_np = np.array(img)
@@ -303,33 +302,79 @@ class WOW:
 
         frame = self.get_screen()
         frame_hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        self.show_img(frame_hsv)
+
 
         h_min = np.array((0, 0, 253), np.uint8)
         h_max = np.array((255, 0, 255), np.uint8)
 
         mask = cv2.inRange(frame_hsv, h_min, h_max)
+        self.show_img(mask)
 
         moments = cv2.moments(mask, 1)
         dM01 = moments['m01']
         dM10 = moments['m10']
         dArea = moments['m00']
 
+        print(dM01,dM10,dArea)
         float_x = 0
         float_y = 0
 
         if dArea > 0:
             float_x = int(dM10 / dArea)
             float_y = int(dM01 / dArea)
+            print(float_x,float_y)
+            cv2.rectangle(frame, (float_x - 15, float_y - 15), (float_x + 15, float_y + 15), (255, 255, 0), 3)
+            # self.show_img(frame)
+
         return float_x, float_y
 
+    def get_float(self):
+        # 加载原始的rgb图像
+        img_rgb = self.get_screen()
+        # 创建一个原始图像的灰度版本，所有操作在灰度版本中处理，然后在RGB图像中使用相同坐标还原
+        img_gray = cv2.cvtColor(img_rgb, cv2.COLOR_BGR2GRAY)
+        self.show_img(img_gray)
+        # 加载将要搜索的图像模板
+        template = cv2.imread('f.png', cv2.IMREAD_GRAYSCALE)
+        # template_gray = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
+        # height, width = template.shape[:2]
+        # size = (int(width * 0.5), int(height * 0.5))
+        # template = cv2.resize(template, size, interpolation=cv2.INTER_AREA)
+        self.show_img(template)
+        # 记录图像模板的尺寸
+        w, h = template.shape[::-1]
+
+        res = cv2.matchTemplate(img_gray, template, cv2.TM_CCOEFF)
+        # res = cv2.matchTemplate(img_gray, template, cv2.TM_CCOEFF)
+        #
+        # 'cv2.TM_CCOEFF', 'cv2.TM_CCOEFF_NORMED', 'cv2.TM_CCORR',
+        # 'cv2.TM_CCORR_NORMED', 'cv2.TM_SQDIFF', 'cv2.TM_SQDIFF_NORMED'
+        # cv2.TM_SQDIFF, cv2.TM_SQDIFF_NORMED 是最小值
+        self.show_img(res)
+        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+        print(min_val, max_val, min_loc, max_loc)
+        print('找到的坐标')
+
+        coordinate = (max_loc[0] + 10, max_loc[1] + 10)  # 左上角的位置
+        # top_left = max_loc  # 左上角的位置
+
+        bottom_right = (max_loc[0] + w, max_loc[1] + h)  # 右下角的位置
+        cv2.rectangle(img_rgb, max_loc, bottom_right, (255, 255, 0), 3)
+        self.show_img(img_rgb)
+        return coordinate
+
+
     def get_screen(self):
+        self.left, self.top, self.right, self.bot = win32gui.GetWindowRect(self.hwnd)
+        self.width = self.right - self.left
+        self.height = self.bot - self.top
+        print(self.left, self.top, self.right, self.bot, self.width, self.height)
         img = pyautogui.screenshot(region=[self.left, self.top, self.width, self.height])  # 分别代表：左上角坐标，宽高
         # 对获取的图片转换成二维矩阵形式，后再将RGB转成BGR
         # 因为imshow,默认通道顺序是BGR，而pyautogui默认是RGB所以要转换一下，不然会有点问题
         img = cv2.cvtColor(np.asarray(img), cv2.COLOR_RGB2BGR)
-        cv2.imwrite("img.jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 100])
-        self.show_img(img)
+        # cv2.imwrite("img.jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 100])
+        # self.show_img(img)
         return img
 
     def capture(self):
@@ -364,6 +409,7 @@ if __name__ == "__main__":
     main_window = tk.Tk()  # 实例化出一个父窗口
     app = APP(main_window)
     app.name = '魔兽世界'
+    app.name = 'WPS Office'
     # 设置根窗口默认属性
     app.set_init_window()
     main_window.protocol("WM_DELETE_WINDOW", app.on_closing)
