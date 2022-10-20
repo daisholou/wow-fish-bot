@@ -1,25 +1,26 @@
 # -*- coding: utf-8 -*-
 
 import pyautogui
-import win32api
+# import win32api
 import win32gui
 # import win32ui
 import win32con
 from threading import Thread
-import time
 import os
 import numpy as np
 import tkinter as tk
 # import tkinter.font as tkFont
 import tkinter.messagebox as tkmsgbox
-import hashlib
+from tkinter import scrolledtext
+# import hashlib
 import time
 import cv2
-import win32ui
-from PIL import ImageGrab
-
-LOG_LINE_NUM = 0
-
+import sounddevice as sd
+import pyaudio
+import audioop
+import math
+from collections import deque
+import wave
 
 class APP:
 
@@ -35,6 +36,7 @@ class APP:
         self.up_button = None
         self.free_wnd_list = None
         self.free_label = None
+        self.log_line_num = 0
         self.init_window = init_window
         self.free_hwnd = []
         self.free_name = []
@@ -86,7 +88,7 @@ class APP:
         self.log_label = tk.Label(self.init_window, text="日志")
         self.log_label.place(x=20, y=270, width=70, height=20)
 
-        self.log_data_Text = tk.Text(self.init_window)
+        self.log_data_Text = tk.scrolledtext.ScrolledText(self.init_window)
         self.log_data_Text.place(x=20, y=300, width=560, height=240)
 
     # 删除
@@ -100,7 +102,7 @@ class APP:
                 self.free_name.append(self.wows[hwnd].name)
                 self.free_wnd_list.insert('end', self.free_name[-1])
                 self.wows[hwnd].working = False
-                self.write_log_to_Text(self.free_name[-1] + ' stoped')
+                self.write_log_to_text(self.free_name[-1] + ' stoped')
 
             for e in reversed(wnd):
                 self.online_hwnd.__delitem__(e)
@@ -120,8 +122,7 @@ class APP:
                 self.online_hwnd.append(hwnd)
                 self.online_name.append(self.wows[hwnd].name)
                 self.online_wnd_list.insert('end', self.online_name[-1])
-                self.write_log_to_Text(self.online_name[-1] + ' start auto fishing')
-                win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
+                self.write_log_to_text(self.online_name[-1] + ' start auto fishing')
                 self.wows[hwnd].working = True
                 self.wows[hwnd].run()
                 # self.get_screen(hwnd)
@@ -218,16 +219,12 @@ class APP:
         return current_time
 
     # 日志动态打印
-    def write_log_to_Text(self, logmsg):
-        global LOG_LINE_NUM
+    def write_log_to_text(self, logmsg):
+
         current_time = self.get_current_time()
-        logmsg_in = str(current_time) + " " + str(logmsg) + "\n"  # 换行
-        if LOG_LINE_NUM <= 7:
-            self.log_data_Text.insert(tk.END, logmsg_in)
-            LOG_LINE_NUM = LOG_LINE_NUM + 1
-        else:
-            self.log_data_Text.delete(1.0, 2.0)
-            self.log_data_Text.insert(tk.END, logmsg_in)
+        log_msg_in = str(current_time) + " " + str(logmsg) + "\n"  # 换行
+        self.log_data_Text.insert(tk.END, log_msg_in)
+        self.log_line_num += 1
 
     def on_closing(self):
         if tkmsgbox.askokcancel(u"退出", u"确定退出程序吗？"):
@@ -247,41 +244,108 @@ class WOW:
         self.hwnd = hwnd
         self.name = str(hwnd) + ' ' + win32gui.GetWindowText(hwnd)
         self.working = False
-        self.gap = 0.5  # 每0.5秒检测一次
+        self.need_bait = False
+        self.threshold = 0.5
+        self.gap = 0.5  # 每1秒检测一次
 
     def run(self):
 
-        t = Thread(target=self.fishing)
+        t = Thread(target=self.fishing2)
         t.start()
 
     def fishing(self):
         bait_time = 0
+        fish_time = 0
         last_x = 0
         last_y = 0
+        is_bait = False
+        is_fishing = False
+        app.write_log_to_text(self.name + ' start fishing')
         while self.working:
-            app.write_log_to_Text(self.name + ' start fishing')
-            is_bait = False
-            x, y = self.get_float()
-            print(x, y)
-            if x + y > 0:
-                if last_y != y and abs(last_x - x) < 1 and abs(last_y - y) < 3:
-                    pyautogui.moveTo(x+self.left, y+self.top, 0.3)  # 收杆
-                    # pyautogui.keyDown("shiftleft")
-                    pyautogui.click(button='right')
-                    # pyautogui.keyUp("shiftleft")
-                last_x = x
-                last_y = y
-                time.sleep(self.gap)
+
+            if not is_fishing:
+                find_x = 0
+                find_y = 0
+                while find_x + find_y == 0:
+                    pyautogui.press('1')  # 下竿
+                    app.write_log_to_text(self.name + ' Lower fishing rod')
+                    fish_time = time.time()
+                    time.sleep(2)
+                    find_x, find_y = self.get_float()
+                is_fishing = True
+            time.sleep(self.gap)
+            if time.time() - fish_time < 20 and is_fishing:
+                x, y = self.get_float()
+                if x + y > 0:
+                    if abs(find_x - x) < 2 and y - find_y > 2:
+                        pyautogui.moveTo(find_x + self.left, find_y + self.top, 1)  # 收杆
+                        # pyautogui.keyDown("shiftleft")
+                        pyautogui.click(button='right')
+                        # pyautogui.keyUp("shiftleft")
+                        app.write_log_to_text(self.name + ' catch U!!')
+                        print("fishing time :", time.time() - fish_time)
+                        is_fishing = False
+                        time.sleep(3)
+                    last_x = x
+                    last_y = y
+                else:
+                    if last_x + last_y > 0:
+                        pyautogui.moveTo(find_x + self.left, find_y + self.top, 1)  # 收杆
+                        # pyautogui.keyDown("shiftleft")
+                        pyautogui.click(button='right')
+                        # pyautogui.keyUp("shiftle
+                        # ft")
+                        app.write_log_to_text(self.name + ' catch U!!')
+                        print("fishing time :", time.time() - fish_time)
+                        time.sleep(3)
+                        is_fishing = False
             else:
-                if time.localtime(time.time()) - bait_time > 600:
-                    is_bait = False
-                if not is_bait:
-                    pyautogui.press('2')  # 上饵
-                    bait_time = time.localtime(time.time())
-                    app.write_log_to_Text(self.name + ' add bait')
-                    is_bait = True
+                app.write_log_to_text(self.name + ' nothing happens')
+                print("fishing time :", time.time() - fish_time)
+                is_fishing = False
+            if time.time() - bait_time > 600:
+                is_bait = False
+            if self.need_bait and not is_bait and not is_fishing:
+                pyautogui.press('2')  # 上饵
+                bait_time = time.time()
+                app.write_log_to_text(self.name + ' add bait')
+                is_bait = True
+
+    def fishing2(self):
+        bait_time = 0
+        fish_time = 0
+        is_bait = False
+        is_fishing = False
+        app.write_log_to_text(self.name + ' start fishing')
+        while self.working:
+
+            find_x = 0
+            find_y = 0
+            while find_x + find_y == 0 and self.working:
                 pyautogui.press('1')  # 下竿
-                app.write_log_to_Text(self.name + ' Lower fishing rod')
+                app.write_log_to_text(self.name + ' Lower fishing rod')
+                fish_time = time.time()
+                time.sleep(2)
+                find_x, find_y = self.get_float()
+            if not self.listen():
+                app.write_log_to_text(self.name + ' nothing happens')
+                print("fishing time :", time.time() - fish_time)
+            else:
+                pyautogui.moveTo(find_x + self.left + 2, find_y + self.top + 2, 1)  # 收杆
+                # pyautogui.keyDown("shiftleft")
+                pyautogui.click(button='right')
+                # pyautogui.keyUp("shiftleft")
+                app.write_log_to_text(self.name + ' catch U!!')
+                print("fishing time :", time.time() - fish_time)
+                time.sleep(2)
+
+            if time.time() - bait_time > 600:
+                is_bait = False
+            if self.need_bait and not is_bait:
+                pyautogui.press('2')  # 上饵
+                bait_time = time.time()
+                app.write_log_to_text(self.name + ' add bait')
+                is_bait = True
 
     def find_specify_picture(self, targetpicture):
         character = pyautogui.locateOnScreen(targetpicture, confidence=0.5)  # grayscale=True)
@@ -293,83 +357,87 @@ class WOW:
             print("none posion find")
             return None
 
-    def find_float(self):
-
-        # img = self.get_screen()
-        # img_np = np.array(img)
-        # frame = cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB)
-        # self.show_img(frame)
-
-        frame = self.get_screen()
-        frame_hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-
-
-        h_min = np.array((0, 0, 253), np.uint8)
-        h_max = np.array((255, 0, 255), np.uint8)
-
-        mask = cv2.inRange(frame_hsv, h_min, h_max)
-        self.show_img(mask)
-
-        moments = cv2.moments(mask, 1)
-        dM01 = moments['m01']
-        dM10 = moments['m10']
-        dArea = moments['m00']
-
-        print(dM01,dM10,dArea)
-        float_x = 0
-        float_y = 0
-
-        if dArea > 0:
-            float_x = int(dM10 / dArea)
-            float_y = int(dM01 / dArea)
-            print(float_x,float_y)
-            cv2.rectangle(frame, (float_x - 15, float_y - 15), (float_x + 15, float_y + 15), (255, 255, 0), 3)
-            # self.show_img(frame)
-
-        return float_x, float_y
+    # def find_float(self):
+    #
+    #     # img = self.get_screen()
+    #     # img_np = np.array(img)
+    #     # frame = cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB)
+    #     # self.show_img(frame)
+    #
+    #     frame = self.get_screen()
+    #     frame_hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    #
+    #
+    #     h_min = np.array((0, 0, 253), np.uint8)
+    #     h_max = np.array((255, 0, 255), np.uint8)
+    #
+    #     mask = cv2.inRange(frame_hsv, h_min, h_max)
+    #     self.show_img(mask)
+    #
+    #     moments = cv2.moments(mask, 1)
+    #     dM01 = moments['m01']
+    #     dM10 = moments['m10']
+    #     dArea = moments['m00']
+    #
+    #     print(dM01,dM10,dArea)
+    #     float_x = 0
+    #     float_y = 0
+    #
+    #     if dArea > 0:
+    #         float_x = int(dM10 / dArea)
+    #         float_y = int(dM01 / dArea)
+    #         print(float_x, float_y)
+    #         cv2.rectangle(frame, (float_x - 15, float_y - 15), (float_x + 15, float_y + 15), (255, 255, 0), 3)
+    #         # self.show_img(frame)
+    #
+    #     return float_x, float_y
 
     def get_float(self):
         # 加载原始的rgb图像
         img_rgb = self.get_screen()
         # 创建一个原始图像的灰度版本，所有操作在灰度版本中处理，然后在RGB图像中使用相同坐标还原
         img_gray = cv2.cvtColor(img_rgb, cv2.COLOR_BGR2GRAY)
-        self.show_img(img_gray)
+        # self.show_img(img_gray)
         # 加载将要搜索的图像模板
-        template = cv2.imread('f.png', cv2.IMREAD_GRAYSCALE)
+        template = cv2.imread('n.png', cv2.IMREAD_GRAYSCALE)
         # template_gray = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
         # height, width = template.shape[:2]
         # size = (int(width * 0.5), int(height * 0.5))
         # template = cv2.resize(template, size, interpolation=cv2.INTER_AREA)
-        self.show_img(template)
+        # self.show_img(template)
         # 记录图像模板的尺寸
         w, h = template.shape[::-1]
 
-        res = cv2.matchTemplate(img_gray, template, cv2.TM_CCOEFF)
+        res = cv2.matchTemplate(img_gray, template, cv2.TM_CCOEFF_NORMED)
         # res = cv2.matchTemplate(img_gray, template, cv2.TM_CCOEFF)
         #
         # 'cv2.TM_CCOEFF', 'cv2.TM_CCOEFF_NORMED', 'cv2.TM_CCORR',
         # 'cv2.TM_CCORR_NORMED', 'cv2.TM_SQDIFF', 'cv2.TM_SQDIFF_NORMED'
         # cv2.TM_SQDIFF, cv2.TM_SQDIFF_NORMED 是最小值
-        self.show_img(res)
+        # self.show_img(res)
         min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
         print(min_val, max_val, min_loc, max_loc)
-        print('找到的坐标')
-
-        coordinate = (max_loc[0] + 10, max_loc[1] + 10)  # 左上角的位置
-        # top_left = max_loc  # 左上角的位置
-
-        bottom_right = (max_loc[0] + w, max_loc[1] + h)  # 右下角的位置
-        cv2.rectangle(img_rgb, max_loc, bottom_right, (255, 255, 0), 3)
-        self.show_img(img_rgb)
+        if max_val > self.threshold:
+            print('找到的坐标', max_loc)
+            coordinate = (self.width / 3 + max_loc[0] + w / 2, self.height / 2 + max_loc[1] + h / 2)  # 中心位置
+            bottom_right = (max_loc[0] + w, max_loc[1] + h)  # 右下角的位置
+            cv2.rectangle(img_rgb, max_loc, bottom_right, (255, 255, 0), 3)
+            cv2.imwrite("img.jpg", img_rgb, [int(cv2.IMWRITE_JPEG_QUALITY), 100])
+        else:
+            coordinate = (0, 0)
         return coordinate
 
-
     def get_screen(self):
+
+        win32gui.SetForegroundWindow(self.hwnd)
+        win32gui.ShowWindow(self.hwnd, win32con.SW_SHOW)
         self.left, self.top, self.right, self.bot = win32gui.GetWindowRect(self.hwnd)
         self.width = self.right - self.left
         self.height = self.bot - self.top
-        print(self.left, self.top, self.right, self.bot, self.width, self.height)
-        img = pyautogui.screenshot(region=[self.left, self.top, self.width, self.height])  # 分别代表：左上角坐标，宽高
+        # print(self.left, self.top, self.right, self.bot, self.width, self.height)
+        img = pyautogui.screenshot(
+            region=[self.left + self.width / 3, self.top + self.height / 2, self.width / 3, self.height / 3])
+        # img = pyautogui.screenshot(region=[self.left, self.top, self.width, self.height])  # 分别代表：左上角坐标，宽高
         # 对获取的图片转换成二维矩阵形式，后再将RGB转成BGR
         # 因为imshow,默认通道顺序是BGR，而pyautogui默认是RGB所以要转换一下，不然会有点问题
         img = cv2.cvtColor(np.asarray(img), cv2.COLOR_RGB2BGR)
@@ -377,25 +445,25 @@ class WOW:
         # self.show_img(img)
         return img
 
-    def capture(self):
-        hwndDC = win32gui.GetWindowDC(self.hwnd)
-        mfcDC = win32ui.CreateDCFromHandle(hwndDC)
-        saveDC = mfcDC.CreateCompatibleDC()
-        saveBitMap = win32ui.CreateBitmap()
-        saveBitMap.CreateCompatibleBitmap(mfcDC, self.width, self.height)
-        saveDC.SelectObject(saveBitMap)
-        saveDC.BitBlt((0, 0), (self.width, self.height), mfcDC, (0, 0), win32con.SRCCOPY)
-        signedIntsArray = saveBitMap.GetBitmapBits(True)
-        win32gui.DeleteObject(saveBitMap.GetHandle())
-        saveDC.DeleteDC()
-        mfcDC.DeleteDC()
-        win32gui.ReleaseDC(self.hwnd, hwndDC)
-        im_opencv = np.frombuffer(signedIntsArray, dtype='uint8')
-        im_opencv.shape = (self.height, self.width, 4)
-        cv2.cvtColor(im_opencv, cv2.COLOR_BGRA2RGB)
-        cv2.imwrite("im_opencv.jpg", im_opencv, [int(cv2.IMWRITE_JPEG_QUALITY), 100])  # 保存
-        self.show_img(im_opencv)
-        return im_opencv
+    # def capture(self):
+    #     hwndDC = win32gui.GetWindowDC(self.hwnd)
+    #     mfcDC = win32ui.CreateDCFromHandle(hwndDC)
+    #     saveDC = mfcDC.CreateCompatibleDC()
+    #     saveBitMap = win32ui.CreateBitmap()
+    #     saveBitMap.CreateCompatibleBitmap(mfcDC, self.width, self.height)
+    #     saveDC.SelectObject(saveBitMap)
+    #     saveDC.BitBlt((0, 0), (self.width, self.height), mfcDC, (0, 0), win32con.SRCCOPY)
+    #     signedIntsArray = saveBitMap.GetBitmapBits(True)
+    #     win32gui.DeleteObject(saveBitMap.GetHandle())
+    #     saveDC.DeleteDC()
+    #     mfcDC.DeleteDC()
+    #     win32gui.ReleaseDC(self.hwnd, hwndDC)
+    #     im_opencv = np.frombuffer(signedIntsArray, dtype='uint8')
+    #     im_opencv.shape = (self.height, self.width, 4)
+    #     cv2.cvtColor(im_opencv, cv2.COLOR_BGRA2RGB)
+    #     cv2.imwrite("im_opencv.jpg", im_opencv, [int(cv2.IMWRITE_JPEG_QUALITY), 100])  # 保存
+    #     self.show_img(im_opencv)
+    #     return im_opencv
 
     def show_img(self, img):
         cv2.namedWindow('test')  # 命名窗口
@@ -404,12 +472,81 @@ class WOW:
         cv2.destroyAllWindows()
         return
 
+    def listen(self):
+        print('Well, now we are listening for loud sounds...')
+        CHUNK = 1024  # CHUNKS of bytes to read each time from mic
+        FORMAT = pyaudio.paInt16
+        CHANNELS = 2
+        RATE = 18000
+        THRESHOLD = 1500  # The threshold intensity that defines silence
+        # and noise signal (an int. lower than THRESHOLD is silence).
+        SILENCE_LIMIT = 1  # Silence limit in seconds. The max ammount of seconds where
+        # only silence is recorded. When this time passes the
+        # recording finishes and the file is delivered.
+        # Open stream
+        p = pyaudio.PyAudio()
+        device_count = p.get_device_count()
+        print(f"device count: {device_count}")
+        device_index = 2
+        # get device info
+        # for i in range(device_count):
+        #     device_info = p.get_device_info_by_index(i)
+        #     if device_info.get('name', '').find('立体声混音') != -1:
+        #         device_index = device_info.get('index')
+        #         print(device_info)
+        #         print(device_index)
+        stream = p.open(format=FORMAT,
+                        channels=CHANNELS,
+                        rate=RATE,
+                        input=True,
+                        input_device_index=device_index,
+                        frames_per_buffer=CHUNK)
+        cur_data = ''  # current chunk  of audio data
+        rel = RATE / CHUNK
+        slid_win = deque(maxlen=SILENCE_LIMIT * int(rel))
+
+        success = False
+        listening_start_time = time.time()
+        record_buf = []
+        while True:
+            try:
+                cur_data = stream.read(CHUNK)
+                # print(cur_data)
+                record_buf.append(cur_data)
+                slid_win.append(math.sqrt(abs(audioop.avg(cur_data, 4))))
+                print(time.time() - listening_start_time)
+                # print(sum([x > THRESHOLD for x in slid_win]))
+                if sum([x > THRESHOLD for x in slid_win]) > 0:
+                    print('I heart something!')
+                    success = True
+                    break
+                if time.time() - listening_start_time > 18:
+                    print('I don\'t hear anything already 20 seconds!')
+                    break
+            except IOError:
+                break
+
+        # print "* Done recording: " + str(time.time() - start)
+        wf = wave.open('01.wav', 'wb')  # 创建一个音频文件，名字为“01.wav"
+        wf.setnchannels(CHANNELS)  # 设置声道数为2
+        wf.setsampwidth(2)  # 设置采样深度为
+        wf.setframerate(RATE)  # 设置采样率为16000
+        # 将数据写入创建的音频文件
+        wf.writeframes("".encode().join(record_buf))
+        # 写完后将文件关闭
+        wf.close()
+        stream.close()
+        p.terminate()
+        return success
+
 
 if __name__ == "__main__":
-    main_window = tk.Tk()  # 实例化出一个父窗口
+
+
+    main_window = tk.Tk()  # 实例化出一个父窗口2
     app = APP(main_window)
     app.name = '魔兽世界'
-    app.name = 'WPS Office'
+    # app.name = 'WPS Office'
     # 设置根窗口默认属性
     app.set_init_window()
     main_window.protocol("WM_DELETE_WINDOW", app.on_closing)

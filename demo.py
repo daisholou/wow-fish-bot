@@ -1,58 +1,68 @@
-# -*- coding: utf-8 -*-
-from ctypes import windll, byref, c_ubyte
-from ctypes.wintypes import RECT, HWND
-import numpy as np
 
-GetDC = windll.user32.GetDC
-CreateCompatibleDC = windll.gdi32.CreateCompatibleDC
-GetClientRect = windll.user32.GetClientRect
-CreateCompatibleBitmap = windll.gdi32.CreateCompatibleBitmap
-SelectObject = windll.gdi32.SelectObject
-BitBlt = windll.gdi32.BitBlt
-SRCCOPY = 0x00CC0020
-GetBitmapBits = windll.gdi32.GetBitmapBits
-DeleteObject = windll.gdi32.DeleteObject
-ReleaseDC = windll.user32.ReleaseDC
+import time
+import sounddevice as sd
+import pyaudio
+import audioop
+import math
+from collections import deque
+import wave
 
-# 排除缩放干扰
-windll.user32.SetProcessDPIAware()
+def listen():
+    print('Well, now we are listening for loud sounds...')
+    CHUNK = 1024  # CHUNKS of bytes to read each time from mic
+    FORMAT = pyaudio.paInt16
+    CHANNELS = 2
+    RATE = 18000
+    THRESHOLD = 1000  # The threshold intensity that defines silence
+    # and noise signal (an int. lower than THRESHOLD is silence).
+    SILENCE_LIMIT = 1  # Silence limit in seconds. The max ammount of seconds where
+    # only silence is recorded. When this time passes the
+    # recording finishes and the file is delivered.
+    # Open stream
+    p = pyaudio.PyAudio()
+
+    stream = p.open(format=FORMAT,
+                    channels=CHANNELS,
+                    rate=RATE,
+                    input=True,
+                    input_device_index=2,
+                    frames_per_buffer=CHUNK)
+
+    # stream = p.open(format=FORMAT,
+    #                 channels=CHANNELS,
+    #                 rate=RATE,
+    #                 input=True,
+    #                 frames_per_buffer=CHUNK)
+    cur_data = ''  # current chunk  of audio data
+    rel = RATE / CHUNK
+    print(rel)
+    slid_win = deque(maxlen=SILENCE_LIMIT * int(rel))
+
+    success = False
+    listening_start_time = time.time()
+    record_buf = []
+    while True:
+        cur_data = stream.read(CHUNK)
+        # print(cur_data)
+        record_buf.append(cur_data)
+        slid_win.append(math.sqrt(abs(audioop.avg(cur_data, 4))))
+        print(time.time() - listening_start_time)
+        print(sum([x > THRESHOLD for x in slid_win]))
+        # if sum([x > THRESHOLD for x in slid_win]) > 0:
+        #     print('I heart something!')
+        #     success = True
+        #     break
+        if time.time() - listening_start_time > 20:
+            print('I don\'t hear anything already 20 seconds!')
+            break
 
 
-def capture(handle: HWND):
-    """窗口客户区截图
+    # print "* Done recording: " + str(time.time() - start)
 
-    Args:
-        handle (HWND): 要截图的窗口句柄
-
-    Returns:
-        numpy.ndarray: 截图数据
-    """
-    # 获取窗口客户区的大小
-    r = RECT()
-    GetClientRect(handle, byref(r))
-    width, height = r.right, r.bottom
-    # 开始截图
-    dc = GetDC(handle)
-    cdc = CreateCompatibleDC(dc)
-    bitmap = CreateCompatibleBitmap(dc, width, height)
-    SelectObject(cdc, bitmap)
-    BitBlt(cdc, 0, 0, width, height, dc, 0, 0, SRCCOPY)
-    # 截图是BGRA排列，因此总元素个数需要乘以4
-    total_bytes = width * height * 4
-    buffer = bytearray(total_bytes)
-    byte_array = c_ubyte * total_bytes
-    GetBitmapBits(bitmap, total_bytes, byte_array.from_buffer(buffer))
-    DeleteObject(bitmap)
-    DeleteObject(cdc)
-    ReleaseDC(handle, dc)
-    # 返回截图数据为numpy.ndarray
-    return np.frombuffer(buffer, dtype=np.uint8).reshape(height, width, 4)
+    stream.close()
+    p.terminate()
+    return success
 
 
 if __name__ == "__main__":
-    import cv2
-    handle = windll.user32.FindWindowW(None, "魔兽世界")
-    print(handle)
-    image = capture(handle)
-    cv2.imshow("Capture Test", image)
-    cv2.waitKey()
+     listen()
