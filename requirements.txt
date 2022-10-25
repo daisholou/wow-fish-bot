@@ -7,3 +7,5 @@ win10toast==0.9
 pyinstaller
 sounddevice
 pyaudio
+matplotlib
+scipy

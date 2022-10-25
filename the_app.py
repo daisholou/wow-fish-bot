@@ -21,6 +21,8 @@ import audioop
 import math
 from collections import deque
 import wave
+from skimage.metrics import structural_similarity
+import imutils
 
 
 class APP:
@@ -257,7 +259,7 @@ class WOW:
 
     def run(self):
 
-        t = Thread(target=self.fishing2)
+        t = Thread(target=self.fishing)
         t.start()
 
     def fishing(self):
@@ -318,100 +320,6 @@ class WOW:
                 app.write_log_to_text(self.name + ' add bait')
                 is_bait = True
 
-    def fishing3(self):
-        bait_time = 0
-        fish_time = 0
-        last_x = 0
-        last_y = 0
-        is_bait = False
-        is_fishing = False
-        app.write_log_to_text(self.name + ' start fishing')
-        while self.working:
-
-            if not is_fishing:
-                find_x = 0
-                find_y = 0
-                while find_x + find_y == 0:
-                    pyautogui.press('1')  # 下竿
-                    app.write_log_to_text(self.name + ' Lower fishing rod')
-                    fish_time = time.time()
-                    time.sleep(2)
-                    find_x, find_y = self.get_float()
-                is_fishing = True
-            time.sleep(self.gap)
-            if time.time() - fish_time < 20 and is_fishing:
-                x, y = self.get_float()
-                if x + y > 0:
-                    if abs(find_x - x) < 2 and y - find_y > 2:
-                        pyautogui.moveTo(find_x + self.left, find_y + self.top, 1)  # 收杆
-                        # pyautogui.keyDown("shiftleft")
-                        pyautogui.click(button='right')
-                        # pyautogui.keyUp("shiftleft")
-                        app.write_log_to_text(self.name + ' catch U!!')
-                        print("fishing time :", time.time() - fish_time)
-                        is_fishing = False
-                        time.sleep(3)
-                    last_x = x
-                    last_y = y
-                else:
-                    if last_x + last_y > 0:
-                        pyautogui.moveTo(find_x + self.left, find_y + self.top, 1)  # 收杆
-                        # pyautogui.keyDown("shiftleft")
-                        pyautogui.click(button='right')
-                        # pyautogui.keyUp("shiftle
-                        # ft")
-                        app.write_log_to_text(self.name + ' catch U!!')
-                        print("fishing time :", time.time() - fish_time)
-                        time.sleep(3)
-                        is_fishing = False
-            else:
-                app.write_log_to_text(self.name + ' nothing happens')
-                print("fishing time :", time.time() - fish_time)
-                is_fishing = False
-            if time.time() - bait_time > 600:
-                is_bait = False
-            if self.need_bait and not is_bait and not is_fishing:
-                pyautogui.press('2')  # 上饵
-                bait_time = time.time()
-                app.write_log_to_text(self.name + ' add bait')
-                is_bait = True
-
-    def fishing2(self):
-        bait_time = 0
-        fish_time = 0
-        is_bait = False
-        is_fishing = False
-        app.write_log_to_text(self.name + ' start fishing')
-        while self.working:
-
-            find_x = 0
-            find_y = 0
-            while find_x + find_y == 0 and self.working:
-                pyautogui.press('1')  # 下竿
-                app.write_log_to_text(self.name + ' Lower fishing rod')
-                fish_time = time.time()
-                time.sleep(2)
-                find_x, find_y = self.get_float()
-            if not self.listen():
-                app.write_log_to_text(self.name + ' nothing happens')
-                print("fishing time :", time.time() - fish_time)
-            else:
-                pyautogui.moveTo(find_x + self.left + 2, find_y + self.top + 2, 1)  # 收杆
-                # pyautogui.keyDown("shiftleft")
-                pyautogui.click(button='right')
-                # pyautogui.keyUp("shiftleft")
-                app.write_log_to_text(self.name + ' catch U!!')
-                print("fishing time :", time.time() - fish_time)
-                time.sleep(2)
-
-            if time.time() - bait_time > 600:
-                is_bait = False
-            if self.need_bait and not is_bait:
-                pyautogui.press('2')  # 上饵
-                bait_time = time.time()
-                app.write_log_to_text(self.name + ' add bait')
-                is_bait = True
-
     def find_specify_picture(self, targetpicture):
         character = pyautogui.locateOnScreen(targetpicture, confidence=0.5)  # grayscale=True)
         if (character is not None):
@@ -422,40 +330,34 @@ class WOW:
             print("none posion find")
             return None
 
-    # def find_float(self):
-    #
-    #     # img = self.get_screen()
-    #     # img_np = np.array(img)
-    #     # frame = cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB)
-    #     # self.show_img(frame)
-    #
-    #     frame = self.get_screen()
-    #     frame_hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    #
-    #
-    #     h_min = np.array((0, 0, 253), np.uint8)
-    #     h_max = np.array((255, 0, 255), np.uint8)
-    #
-    #     mask = cv2.inRange(frame_hsv, h_min, h_max)
-    #     self.show_img(mask)
-    #
-    #     moments = cv2.moments(mask, 1)
-    #     dM01 = moments['m01']
-    #     dM10 = moments['m10']
-    #     dArea = moments['m00']
-    #
-    #     print(dM01,dM10,dArea)
-    #     float_x = 0
-    #     float_y = 0
-    #
-    #     if dArea > 0:
-    #         float_x = int(dM10 / dArea)
-    #         float_y = int(dM01 / dArea)
-    #         print(float_x, float_y)
-    #         cv2.rectangle(frame, (float_x - 15, float_y - 15), (float_x + 15, float_y + 15), (255, 255, 0), 3)
-    #         # self.show_img(frame)
-    #
-    #     return float_x, float_y
+    def find_float(self, img1, img2):
+
+        float_x, float_y, float_width, float_height = 0
+
+        grayA = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
+        grayB = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
+        (score, diff) = structural_similarity(grayA, grayB, full=True)
+        diff = (diff * 255).astype("uint8")
+        print("SSIM:{}".format(score))
+
+        # 找到不同点的轮廓以致于我们可以在被标识为“不同”的区域周围放置矩形
+        thresh = cv2.threshold(diff, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
+        cnts = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        cnts = cnts[0] if imutils.is_cv2() else cnts[1]
+
+        # 找到一系列区域，在区域周围放置矩形
+        for c in cnts:
+            (x, y, w, h) = cv2.boundingRect(c)
+            cv2.rectangle(img1, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            cv2.rectangle(img2, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            if 3 < w < 10 and 3 < h < 10:
+                return x, y, w, h
+        # 用cv2.imshow 展现最终对比之后的图片， cv2.imwrite 保存最终的结果图片
+        cv2.imshow("Modified", img2)
+        cv2.imwrite(r"result.bmp", img2)
+        cv2.waitKey(0)
+
+        return float_x, float_y, float_width, float_height
 
     def get_float(self):
         # 加载原始的rgb图像
@@ -500,7 +402,6 @@ class WOW:
                 region=[self.left + self.width / 3, self.top + self.height / 2, self.width / 3, self.height / 3])
         img = cv2.cvtColor(np.asarray(img), cv2.COLOR_RGB2BGR)
         return img
-
 
     def show_img(self, img):
         cv2.namedWindow('test')  # 命名窗口
